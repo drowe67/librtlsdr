@@ -105,6 +105,7 @@ void usage(void)
 		"Usage:\t -f frequency_to_tune_to [Hz]\n"
 		"\t[-s samplerate (default: %d Hz)]\n"
 		"\t[-d device_index (default: 0)]\n"
+		"\t[-e extended gain -e 0xlmi (l,m,i single hex digits 0-f)\n"
 		"\t[-g gain (default: 0 for auto)]\n"
 		"\t[-p ppm_error (default: 0)]\n"
 		"\t[-M modn order (default: 2)]\n"
@@ -389,12 +390,20 @@ int main(int argc, char **argv)
         int tone_spacing = 100;
         int freq_est_mask = 0;
         output_bits = 1;
+        int ext_gain = 0;
+        int gains_hex, lna_gain, mixer_gain, vga_gain;
         
 	while ((opt = getopt(argc, argv, "d:f:g:s:b:n:p:S:u:r:m:c:M:R:xt:")) != -1) {
 		switch (opt) {
 		case 'd':
 			dev_index = verbose_device_search(optarg);
 			dev_given = 1;
+			break;
+		case 'e':
+                        ext_gain = 1;
+                        gains_hex = (int)strtol(optarg, NULL, 16);
+                        lna_gain = gains_hex >> 8; mixer_gain = (gains_hex >> 4) & 0xf; vga_gain = gains_hex & 0xf;
+                        fprintf(stderr, "lna_gain: %d mixer_gain: %d vga_gain: %d\n", lna_gain, mixer_gain, vga_gain);
 			break;
 		case 'f':
 			frequency = (uint32_t)atofs(optarg);
@@ -532,14 +541,19 @@ int main(int argc, char **argv)
 	/* Set the frequency */
 	verbose_set_frequency(dev, frequency);
 
-	if (0 == gain) {
-		 /* Enable automatic gain */
+        if (ext_gain == 0) {
+            if (0 == gain) {
+                /* Enable automatic gain */
 		verbose_auto_gain(dev);
-	} else {
+            } else {
 		/* Enable manual gain */
 		gain = nearest_gain(dev, gain);
 		verbose_gain_set(dev, gain);
-	}
+            }
+        } else {
+            fprintf(stderr, "setting extended gain....\n");
+            rtlsdr_set_tuner_gain_ext(dev, lna_gain, mixer_gain, vga_gain);
+        }
 
 	verbose_ppm_set(dev, ppm_error);
 

@@ -4,8 +4,9 @@
 
 # Description
 
-rtl-sdr turns your Realtek RTL2832 based DVB dongle into a SDR receiver
+Fork of [librtlsdr](https://github.com/librtlsdr/librtlsdr) for Open VHF/UHF IP link using Pi and RTL-SDR.
 
+Turns your Realtek RTL2832 based DVB dongle into a **FSK** receiver.
 
 # For more information see:
 
