@@ -784,8 +784,8 @@ static int r82xx_set_pll_yc(struct r82xx_priv *priv, uint32_t freq)
     /* Disable frac pll */
     rc = r82xx_write_reg_mask(priv, 0x12, 0x08, 0x08);
     if(rc < 0) {
-    if (priv->cfg->verbose)
-      fprintf(stderr, "r82xx_set_pll_yc(): error writing 'disable frac pll' into i2c reg 0x12\n");
+      if (priv->cfg->verbose)
+        fprintf(stderr, "r82xx_set_pll_yc(): error writing 'disable frac pll' into i2c reg 0x12\n");
       return rc;
     }
   }
@@ -1373,10 +1373,16 @@ int r82xx_set_gain(struct r82xx_priv *priv, int set_manual_gain, int gain,
 	int new_if_mode = priv->last_if_mode;
 	uint8_t data[4];
 
+        fprintf(stderr, "r82xx_set_gain() set_manual_gain: %d gain: %d extended_mode: %d lna: %d mixer: %d vga_%d\n",
+                set_manual_gain, gain, extended_mode, lna_gain_idx, mixer_gain_idx, vga_gain_idx);
+
 	if (extended_mode || set_manual_gain) {
 
 		if (set_manual_gain) {
 			r82xx_get_rf_gain_index(gain, &lna_gain_idx, &mixer_gain_idx);
+                        fprintf(stderr, "after r82xx_get_rf_gain_index()\n");
+                        fprintf(stderr, "  lna_gain: %d rf_gain: %d\n", lna_gain_idx, mixer_gain_idx);
+                        new_if_mode = 10000 + 8;
 		}
 
 		/* LNA auto off == manual */
@@ -1436,7 +1442,7 @@ int r82xx_set_gain(struct r82xx_priv *priv, int set_manual_gain, int gain,
 
 	/* Set VGA */
 	rc = r82xx_set_if_mode(priv, new_if_mode, rtl_vga_control);
-
+        
 	return rc;
 }
 
@@ -1460,7 +1466,8 @@ int r82xx_get_if_gain(struct r82xx_priv *priv)
 int r82xx_set_if_mode(struct r82xx_priv *priv, int if_mode, int *rtl_vga_control)
 {
 	int rc = 0, vga_gain_idx = 0;
-
+        fprintf(stderr, "  r82xx_set_if_mode() ifmode: %d\n", vga_gain_idx);
+        
 	if (rtl_vga_control)
 		*rtl_vga_control = 0;
 
@@ -1493,6 +1500,8 @@ int r82xx_set_if_mode(struct r82xx_priv *priv, int if_mode, int *rtl_vga_control
 		(vga_gain_idx & 0x0f), (-12.0 + 3.5 * (vga_gain_idx & 0x0f)),
 		( (vga_gain_idx & 0x10) && rtl_vga_control ) ? "" : "de" );
 #endif
+        fprintf(stderr, "    vga_gain_idx: %d\n", vga_gain_idx);
+        
 	rc = r82xx_write_reg_mask(priv, 0x0c, vga_gain_idx, 0x1f);
 	if (rc < 0)
 		return rc;
