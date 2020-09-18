@@ -118,6 +118,7 @@ endif()
 ########################################################################
 # Build utility
 ########################################################################
+add_executable(rtl_fsk rtl_fsk.c)
 add_executable(rtl_sdr rtl_sdr.c)
 add_executable(rtl_tcp rtl_tcp.c controlThread.c)
 add_executable(rtl_udp rtl_udp.c)
@@ -138,6 +139,13 @@ if (WITH_RPC)
 else()
     set(INSTALL_TARGETS rtlsdr_shared rtlsdr_static rtl_sdr rtl_tcp rtl_udp rtl_test rtl_fm rtl_ir rtl_eeprom rtl_adsb rtl_power rtl_biast rtl_raw2wav rtl_wavestat rtl_wavestream)
 endif()
+
+target_link_libraries(rtl_fsk codec2 rtlsdr_shared convenience_static
+    ${LIBUSB_LIBRARIES}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${CSDR_LIBRARY}
+    fftw3
+)
 
 target_link_libraries(rtl_sdr ${RTLSDR_TOOL_LIB} convenience_static
     ${LIBUSB_LIBRARIES}
