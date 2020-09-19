@@ -50,6 +50,7 @@
 /* rtlsdr  ------------------------------------*/
 
 #define DEFAULT_SAMPLE_RATE		1800000
+#define DEFAULT_BANDWIDTH		0	      /* automatic bandwidth */
 #define DEFAULT_BUF_LENGTH		(16 * 16384)
 #define MINIMAL_BUF_LENGTH		512
 #define MAXIMAL_BUF_LENGTH		(256 * 16384)
@@ -387,13 +388,14 @@ int main(int argc, char **argv)
         int Rs = DEFAULT_SYMBOL_RATE;
         int M = DEFAULT_M;
         int channel_width = DEFAULT_CHANNEL_WIDTH;
+	uint32_t bandwidth = DEFAULT_BANDWIDTH;
         int tone_spacing = 100;
         int freq_est_mask = 0;
         output_bits = 1;
         int ext_gain = 0;
         int gains_hex, lna_gain, mixer_gain, vga_gain;
         
-	while ((opt = getopt(argc, argv, "d:f:g:s:b:n:p:S:u:r:m:c:M:R:xt:")) != -1) {
+	while ((opt = getopt(argc, argv, "d:e:f:g:s:b:n:p:S:u:r:m:c:M:R:xt:w:")) != -1) {
 		switch (opt) {
 		case 'd':
 			dev_index = verbose_device_search(optarg);
@@ -413,6 +415,9 @@ int main(int argc, char **argv)
 			break;
 		case 's':
 			samp_rate = (uint32_t)atofs(optarg);
+			break;
+		case 'w':
+			bandwidth = (uint32_t)atofs(optarg);
 			break;
 		case 'p':
 			ppm_error = atoi(optarg);
@@ -537,6 +542,9 @@ int main(int argc, char **argv)
 #endif
 	/* Set the sample rate */
 	verbose_set_sample_rate(dev, samp_rate);
+
+	/* Set the tuner bandwidth */
+	verbose_set_bandwidth(dev, bandwidth);
 
 	/* Set the frequency */
 	verbose_set_frequency(dev, frequency);
