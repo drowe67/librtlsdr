@@ -104,6 +104,7 @@ void usage(void)
 	fprintf(stderr,
 		"rtl_fsk, a FSK demodulator for RTL2832 based DVB-T receivers\n\n"
 		"Usage:\t -f frequency_to_tune_to [Hz]\n"
+		"\t[-a modem_samplerate (default: %d Hz)]\n"
 		"\t[-s samplerate (default: %d Hz)]\n"
 		"\t[-d device_index (default: 0)]\n"
 		"\t[-e extended gain -e 0xlmi (l,m,i single hex digits 0-f)\n"
@@ -119,7 +120,7 @@ void usage(void)
 		"\t[-u hostname (optional hostname:8001 where we send UDP dashboard diagnostics)\n"
                 "\t[-x output complex float samples (default output demodulated oneCharPerBit)]\n"
                 "\t[-t toneSpacing use 'mask' freq est]\n"
-		"\tfilename (a '-' dumps bits to stdout)\n\n", DEFAULT_SAMPLE_RATE, DEFAULT_SYMBOL_RATE, DEFAULT_M);
+		"\tfilename (a '-' dumps bits to stdout)\n\n", DEFAULT_MODEM_SAMPLE_RATE, DEFAULT_SAMPLE_RATE, DEFAULT_SYMBOL_RATE, DEFAULT_M);
 	exit(1);
 }
 
@@ -395,8 +396,11 @@ int main(int argc, char **argv)
         int ext_gain = 0;
         int gains_hex, lna_gain, mixer_gain, vga_gain;
         
-	while ((opt = getopt(argc, argv, "d:e:f:g:s:b:n:p:S:u:r:m:c:M:R:xt:w:")) != -1) {
+	while ((opt = getopt(argc, argv, "a:d:e:f:g:s:b:n:p:S:u:r:m:c:M:R:xt:w:")) != -1) {
 		switch (opt) {
+		case 'a':
+			modem_samp_rate = (uint32_t)atofs(optarg);
+			break;
 		case 'd':
 			dev_index = verbose_device_search(optarg);
 			dev_given = 1;
@@ -584,6 +588,11 @@ int main(int argc, char **argv)
             float transition_bw = 0.05;
             window_t window = WINDOW_DEFAULT;
 
+            if (samp_rate % modem_samp_rate) {
+                fprintf(stderr, "ERROR: samplerate/modem_samplerate = %d/%d must be an integer\n",
+                        samp_rate, modem_samp_rate);
+                exit(1);
+            }
             csdr_factor = samp_rate/modem_samp_rate;
             csdr_taps = csdr_init_decimate_cc(csdr_factor, transition_bw, window, &csdr_padded_taps_length);
             assert(CSDR_BUFSIZE > padded_taps_length);
