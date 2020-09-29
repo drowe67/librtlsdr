@@ -31,6 +31,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h> 
+#include <getopt.h>
 
 
 #ifndef _WIN32
@@ -44,8 +45,14 @@
 
 #include "rtl-sdr.h"
 #include "convenience/convenience.h"
+#include "convenience/rtl_convenience.h"
 #include "fsk.h"
 #include "libcsdr.h"
+#include "ldpc_codes.h"
+#include "freedv_api.h"
+
+// not normally exposed by FreeDV API
+int freedv_tx_fsk_ldpc_bits_per_frame(struct freedv *f);
 
 /* rtlsdr  ------------------------------------*/
 
@@ -99,6 +106,10 @@ static COMP* modembuf;
 static size_t nmodembuf = 0;
 static size_t nmodembuf_max = 0;
 
+static struct freedv *freedv = NULL;
+static int fsk_ldpc = 0;
+static uint8_t *bytes_out;
+
 void usage(void)
 {
 	fprintf(stderr,
@@ -120,6 +131,8 @@ void usage(void)
 		"\t[-u hostname (optional hostname:8001 where we send UDP dashboard diagnostics)\n"
                 "\t[-x output complex float samples (default output demodulated oneCharPerBit)]\n"
                 "\t[-t toneSpacing use 'mask' freq est]\n"
+                "\t[--code CodeName  Use LDPC code CodeName] (note packed bytes out)\n"
+                "\t[--listcodes      List available LDPC codes]\n"
 		"\tfilename (a '-' dumps bits to stdout)\n\n", DEFAULT_MODEM_SAMPLE_RATE, DEFAULT_SAMPLE_RATE, DEFAULT_SYMBOL_RATE, DEFAULT_M);
 	exit(1);
 }
@@ -293,6 +306,7 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
         unsigned char  bitbuf[fsk->Nbits];
         COMP          *pmodembuf;
         int            prev_fsk_nin;
+        int            nbytes = 0;
         
 	if (ctx) {
 		if (do_exit)
@@ -344,24 +358,34 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
                 pmodembuf = modembuf;
                 while(nmodembuf >= fsk_nin(fsk)) {
                     prev_fsk_nin = fsk_nin(fsk);       /* fsk_nin gets updated in fsk_demod() */
+                                                       /* note: in coded mode fsk_nin() == freedv_nin() */
                     if (output_bits == 0)
                         fwrite((float*)pmodembuf, sizeof(complexf), prev_fsk_nin, (FILE*)ctx); 
-                    else
-                        fsk_demod(fsk, bitbuf, pmodembuf);
+                    else {
+                        if (fsk_ldpc == 0)
+                            fsk_demod(fsk, bitbuf, pmodembuf);
+                        else
+                            nbytes = freedv_rawdatacomprx(freedv, bytes_out, pmodembuf);
+                    }
                     pmodembuf += prev_fsk_nin;
                     nmodembuf -= prev_fsk_nin;
                     assert(nmodembuf >= 0);
 
                     /* output demodulated bits */
-                    if (output_bits)
-                        fwrite(bitbuf, 1, fsk->Nbits, (FILE*)ctx);
+                    if (output_bits) {
+                        if (fsk_ldpc == 0)
+                            fwrite(bitbuf, 1, fsk->Nbits, (FILE*)ctx);  /* one bit per byte */
+                        else
+                            fwrite(bytes_out, 1, nbytes, (FILE*)ctx);   /* packed bytes     */
+                    }
+                    
                     if((FILE*)ctx == stdout) fflush((FILE*)ctx);
                     
                     if (dashboard) {
                         update_dashboard(fsk);
                     }
                 }
-                /* copy left over modem saples to start of buffer */
+                /* copy left over modem samples to start of buffer */
                 memmove(modembuf, pmodembuf, nmodembuf*sizeof(COMP));
                 
 		if (bytes_to_read > 0)
@@ -392,14 +416,33 @@ int main(int argc, char **argv)
 	uint32_t bandwidth = DEFAULT_BANDWIDTH;
         int tone_spacing = 100;
         int freq_est_mask = 0;
-        output_bits = 1;
         int ext_gain = 0;
-        int gains_hex, lna_gain, mixer_gain, vga_gain;
+        int gains_hex, lna_gain=15, mixer_gain=15, vga_gain=8;      
+        int opt_idx = 0;
+        struct freedv_advanced adv;
+
+        output_bits = 1;
+        opt = 0;
         
-	while ((opt = getopt(argc, argv, "a:d:e:f:g:s:b:n:p:S:u:r:m:c:M:R:xt:w:")) != -1) {
-		switch (opt) {
+        while( opt != -1 ){
+            static struct option long_opts[] = {
+                {"listcodes", no_argument,       0, 'j'},
+                {"code",      required_argument, 0, 'k'},
+                {0, 0, 0, 0}
+            };
+        
+            opt = getopt_long(argc,argv,"a:d:e:f:g:s:b:n:p:S:u:r:m:c:M:R:xt:w:jk:",long_opts,&opt_idx);
+            switch (opt) {
 		case 'a':
 			modem_samp_rate = (uint32_t)atofs(optarg);
+			break;
+		case 'j':
+                        ldpc_codes_list();
+                        exit(0);
+			break;
+		case 'k':
+                        fsk_ldpc = 1;
+                        adv.codename = optarg;
 			break;
 		case 'd':
 			dev_index = verbose_device_search(optarg);
@@ -459,9 +502,6 @@ int main(int argc, char **argv)
                         freq_est_mask = 1;
                         tone_spacing = atoi(optarg);
                         break;
-		default:
-			usage();
-			break;
 		}
 	}
 
@@ -603,15 +643,30 @@ int main(int argc, char **argv)
         
         /* Setup the FSK demod -------------------------------------------------*/
         
-        {
+        if (fsk_ldpc == 0) {
+            /* uncoded mode: just set up FSK demod by itself */
             int P = modem_samp_rate/Rs;
             fsk = fsk_create_hbr(modem_samp_rate,Rs,M,P,FSK_DEFAULT_NSYM,FSK_NONE,tone_spacing);
-            fsk_set_freq_est_alg(fsk, freq_est_mask);
-            fprintf(stderr,"FSK Demod Fs: %5.1f kHz Rs: %3.1f kHz M: %d P: %d Ndft: %d fest_mask: %d\n",
-                    (float)modem_samp_rate/1000,
-                    (float)Rs/1000, M, P, fsk->Ndft, freq_est_mask);
+       } else {
+            /* coded mode: use FreeDV API to set up and run FSK modem, LDPC, framer */
+
+            int data_bits_per_frame, bits_per_frame;
+            adv.Rs = Rs; adv.Fs = modem_samp_rate; adv.M = M;
+            freedv = freedv_open_advanced(FREEDV_MODE_FSK_LDPC, &adv);
+            assert(freedv != NULL);
+            data_bits_per_frame = freedv_get_bits_per_modem_frame(freedv);
+            bits_per_frame = freedv_tx_fsk_ldpc_bits_per_frame(freedv);
+            assert(data_bits_ber_frame % 8); /* only want codes that send complete bytes */
+            fprintf(stderr, "FSK LDPC mode code: %s data_bits_per_frame: %d\n", adv.codename, data_bits_per_frame);
+            fsk = freedv_get_fsk(freedv);
+            bytes_out = malloc(data_bits_per_frame / 8);
         }
-        {
+        fprintf(stderr,"FSK Demod Fs: %5.1f kHz Rs: %3.1f kHz M: %d P: %d Ndft: %d fest_mask: %d\n",
+                (float)modem_samp_rate/1000,
+                (float)Rs/1000, M, fsk->P, fsk->Ndft, freq_est_mask);
+         
+        fsk_set_freq_est_alg(fsk, freq_est_mask);
+        {    
             /* set minimum "channel" for freq est */
             fsk_lower = Rs/2;
             fsk_upper = 4*Rs;
@@ -667,7 +722,13 @@ int main(int argc, char **argv)
 		fclose(file);
 
 	rtlsdr_close(dev);
-        fsk_destroy(fsk);
+        if (fsk_ldpc == 0)
+            fsk_destroy(fsk);
+        else {
+            free(bytes_out);
+            freedv_close(freedv);
+        }
+        
 	free (buffer);
 	free (rawbuf);
         free(modembuf);
