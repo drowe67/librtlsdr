@@ -109,6 +109,7 @@ static size_t nmodembuf_max = 0;
 static struct freedv *freedv = NULL;
 static int fsk_ldpc = 0;
 static uint8_t *bytes_out;
+static int verbose = 0;
 
 void usage(void)
 {
@@ -293,7 +294,7 @@ void update_dashboard(struct FSK *fsk) {
         /* finish up JSON and send to dashboard GUI over UDP */
         snprintf(buf1, BUF_SZ, "}\n"); strncat(buf, buf1, BUF_SZ); 
         udp_sendbuf(buf);
-        fprintf(stderr, ".");
+        if (verbose == 0) fprintf(stderr, ".");
     }
 }
 
@@ -420,7 +421,7 @@ int main(int argc, char **argv)
         int gains_hex, lna_gain=15, mixer_gain=15, vga_gain=8;      
         int opt_idx = 0;
         struct freedv_advanced adv;
-
+        
         output_bits = 1;
         opt = 0;
         
@@ -431,7 +432,7 @@ int main(int argc, char **argv)
                 {0, 0, 0, 0}
             };
         
-            opt = getopt_long(argc,argv,"a:d:e:f:g:s:b:n:p:S:u:r:m:c:M:R:xt:w:jk:",long_opts,&opt_idx);
+            opt = getopt_long(argc,argv,"a:d:e:f:g:s:b:n:p:S:u:r:m:c:M:R:xt:w:jk:v",long_opts,&opt_idx);
             switch (opt) {
 		case 'a':
 			modem_samp_rate = (uint32_t)atofs(optarg);
@@ -501,6 +502,9 @@ int main(int argc, char **argv)
                 case 't':
                         freq_est_mask = 1;
                         tone_spacing = atoi(optarg);
+                        break;
+                case 'v':
+                        verbose = 1;
                         break;
 		}
 	}
@@ -660,6 +664,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "FSK LDPC mode code: %s data_bits_per_frame: %d\n", adv.codename, data_bits_per_frame);
             fsk = freedv_get_fsk(freedv);
             bytes_out = malloc(data_bits_per_frame / 8);
+            freedv_set_verbose(freedv, verbose);
         }
         fprintf(stderr,"FSK Demod Fs: %5.1f kHz Rs: %3.1f kHz M: %d P: %d Ndft: %d fest_mask: %d\n",
                 (float)modem_samp_rate/1000,
