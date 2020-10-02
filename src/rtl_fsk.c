@@ -123,17 +123,17 @@ void usage(void)
 		"\t[-g gain (default: 0 for auto)]\n"
 		"\t[-p ppm_error (default: 0)]\n"
 		"\t[-M modn order (default: 2)]\n"
-		"\t[-R symbol rate (default: 10000)]\n"
 		"\t[-b output_block_size (default: 16 * 16384)]\n"
 		"\t[-n number of samples to read (default: 0, infinite)]\n"
 		"\t[-S force sync output (default: async)]\n"
 		"\t[-r FSK modem symbol rate (default: %d Hz)]\n"
 		"\t[-m number of FSK modem tones (default: %d)]\n"
 		"\t[-u hostname (optional hostname:8001 where we send UDP dashboard diagnostics)\n"
-                "\t[-x output complex float samples (default output demodulated oneCharPerBit)]\n"
+                "\t[-x output complex float samples (default output demodulated bits)]\n"
                 "\t[-t toneSpacing use 'mask' freq est]\n"
                 "\t[--code CodeName  Use LDPC code CodeName] (note packed bytes out)\n"
                 "\t[--listcodes      List available LDPC codes]\n"
+                "\t[--testframes]    built in testframe mode\n"
 		"\tfilename (a '-' dumps bits to stdout)\n\n", DEFAULT_MODEM_SAMPLE_RATE, DEFAULT_SAMPLE_RATE, DEFAULT_SYMBOL_RATE, DEFAULT_M);
 	exit(1);
 }
@@ -421,6 +421,7 @@ int main(int argc, char **argv)
         int gains_hex, lna_gain=15, mixer_gain=15, vga_gain=8;      
         int opt_idx = 0;
         struct freedv_advanced adv;
+        int use_testframes = 0;
         
         output_bits = 1;
         opt = 0;
@@ -429,6 +430,8 @@ int main(int argc, char **argv)
             static struct option long_opts[] = {
                 {"listcodes", no_argument,       0, 'j'},
                 {"code",      required_argument, 0, 'k'},
+                {"testframes",no_argument,       0, 'i'},
+                {"vv",        no_argument,       0, 'l'},
                 {0, 0, 0, 0}
             };
         
@@ -444,6 +447,13 @@ int main(int argc, char **argv)
 		case 'k':
                         fsk_ldpc = 1;
                         adv.codename = optarg;
+			break;
+		case 'i':
+                        if (fsk_ldpc == 0) {
+                            fprintf(stderr, "internal testframe mode only supported in --code coded mode!\n");
+                            exit(1);
+                        }
+                        use_testframes = 1;
 			break;
 		case 'd':
 			dev_index = verbose_device_search(optarg);
@@ -505,6 +515,9 @@ int main(int argc, char **argv)
                         break;
                 case 'v':
                         verbose = 1;
+                        break;
+                case 'l':
+                        verbose = 2;
                         break;
 		}
 	}
@@ -665,6 +678,7 @@ int main(int argc, char **argv)
             fsk = freedv_get_fsk(freedv);
             bytes_out = malloc(data_bits_per_frame / 8);
             freedv_set_verbose(freedv, verbose);
+            freedv_set_test_frames(freedv, use_testframes);
         }
         fprintf(stderr,"FSK Demod Fs: %5.1f kHz Rs: %3.1f kHz M: %d P: %d Ndft: %d fest_mask: %d\n",
                 (float)modem_samp_rate/1000,
