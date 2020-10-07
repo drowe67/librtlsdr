@@ -130,7 +130,7 @@ void usage(void)
 		"\t[-m number of FSK modem tones (default: %d)]\n"
 		"\t[-u hostname (optional hostname:8001 where we send UDP dashboard diagnostics)\n"
                 "\t[-x output complex float samples (default output demodulated bits)]\n"
-                "\t[-t toneSpacing use 'mask' freq est]\n"
+                "\t[-t toneSpacingHz use 'mask' freq est]\n"
                 "\t[--code CodeName  Use LDPC code CodeName] (note packed bytes out)\n"
                 "\t[--listcodes      List available LDPC codes]\n"
                 "\t[--testframes]    built in testframe mode\n"
@@ -432,11 +432,13 @@ int main(int argc, char **argv)
                 {"code",      required_argument, 0, 'k'},
                 {"testframes",no_argument,       0, 'i'},
                 {"vv",        no_argument,       0, 'l'},
+                {"mask",      required_argument, 0, 't'},
                 {0, 0, 0, 0}
             };
         
             opt = getopt_long(argc,argv,"a:d:e:f:g:s:b:n:p:S:u:r:m:c:M:R:xt:w:jk:v",long_opts,&opt_idx);
-            switch (opt) {
+            if (opt != -1) {
+                switch (opt) {
 		case 'a':
 			modem_samp_rate = (uint32_t)atofs(optarg);
 			break;
@@ -519,7 +521,11 @@ int main(int argc, char **argv)
                 case 'l':
                         verbose = 2;
                         break;
+                default:
+                        usage();
+                        break;
 		}
+            }
 	}
 
 	if (argc <= optind) {
@@ -668,7 +674,7 @@ int main(int argc, char **argv)
             /* coded mode: use FreeDV API to set up and run FSK modem, LDPC, framer */
 
             int data_bits_per_frame, bits_per_frame;
-            adv.Rs = Rs; adv.Fs = modem_samp_rate; adv.M = M;
+            adv.Rs = Rs; adv.Fs = modem_samp_rate; adv.M = M; adv.tone_spacing = tone_spacing;
             freedv = freedv_open_advanced(FREEDV_MODE_FSK_LDPC, &adv);
             assert(freedv != NULL);
             data_bits_per_frame = freedv_get_bits_per_modem_frame(freedv);
