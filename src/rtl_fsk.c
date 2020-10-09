@@ -694,7 +694,7 @@ int main(int argc, char **argv)
         {    
             /* set minimum "channel" for freq est */
             fsk_lower = Rs/2;
-            fsk_upper = 4*Rs;
+            fsk_upper = 2*M*Rs;
             if (fsk_lower < 2000) fsk_lower = 2000;
             if (fsk_upper < channel_width) fsk_upper = channel_width;
             if (fsk_upper > (int)modem_samp_rate/2) fsk_upper = modem_samp_rate/2;
