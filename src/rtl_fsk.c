@@ -116,7 +116,7 @@ void usage(void)
 	fprintf(stderr,
 		"rtl_fsk, a FSK demodulator for RTL2832 based DVB-T receivers\n\n"
 		"Usage:\t -f frequency_to_tune_to [Hz]\n"
-		"\t[-a modem_samplerate (default: %d Hz)]\n"
+		"\t[-a FSK modem sample rate (default: %d Hz)]\n"
 		"\t[-s samplerate (default: %d Hz)]\n"
 		"\t[-d device_index (default: 0)]\n"
 		"\t[-e extended gain -e 0xlmi (l,m,i single hex digits 0-f)\n"
@@ -134,7 +134,7 @@ void usage(void)
                 "\t[--code CodeName  Use LDPC code CodeName] (note packed bytes out)\n"
                 "\t[--listcodes      List available LDPC codes]\n"
                 "\t[--testframes]    built in testframe mode\n"
-		"\tfilename (a '-' dumps bits to stdout)\n\n", DEFAULT_MODEM_SAMPLE_RATE, DEFAULT_SAMPLE_RATE, DEFAULT_SYMBOL_RATE, DEFAULT_M);
+		"\tfilename ( '-' dumps bits to stdout)\n\n", DEFAULT_MODEM_SAMPLE_RATE, DEFAULT_SAMPLE_RATE, DEFAULT_SYMBOL_RATE, DEFAULT_M);
 	exit(1);
 }
 
@@ -665,7 +665,15 @@ int main(int argc, char **argv)
         }
         
         /* Setup the FSK demod -------------------------------------------------*/
-        
+
+        if (modem_samp_rate % Rs) {
+            fprintf(stderr, "Error: (modem sample rate) / (modem symbol rate) must be an integer\n");
+            exit(1);
+        }
+        if ((modem_samp_rate / Rs) < 8) {
+            fprintf(stderr, "Error: (modem sample rate) / (modem symbol rate) must be >= 8\n");
+            exit(1);
+        }
         if (fsk_ldpc == 0) {
             /* uncoded mode: just set up FSK demod by itself */
             int P = modem_samp_rate/Rs;
