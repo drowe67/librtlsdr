@@ -51,9 +51,6 @@
 #include "ldpc_codes.h"
 #include "freedv_api.h"
 
-// not normally exposed by FreeDV API
-int freedv_tx_fsk_ldpc_bits_per_frame(struct freedv *f);
-
 /* rtlsdr  ------------------------------------*/
 
 #define DEFAULT_SAMPLE_RATE		1800000
@@ -109,7 +106,10 @@ static size_t nmodembuf_max = 0;
 static struct freedv *freedv = NULL;
 static int fsk_ldpc = 0;
 static uint8_t *bytes_out;
+static uint8_t *zeros_out;
 static int verbose = 0;
+static int data_bytes_per_frame;
+static int periodic_output = 0;
 
 void usage(void)
 {
@@ -125,6 +125,7 @@ void usage(void)
 		"\t[-M modn order (default: 2)]\n"
 		"\t[-b output_block_size (default: 16 * 16384)]\n"
 		"\t[-n number of samples to read (default: 0, infinite)]\n"
+		"\t[-q periodic | status byte | data bytes | output (default: off)]\n"
 		"\t[-S force sync output (default: async)]\n"
 		"\t[-r FSK modem symbol rate (default: %d Hz)]\n"
 		"\t[-m number of FSK modem tones (default: %d)]\n"
@@ -372,12 +373,29 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
                     nmodembuf -= prev_fsk_nin;
                     assert(nmodembuf >= 0);
 
-                    /* output demodulated bits */
+                    /* output demodulated bits - bunch of different modes */
                     if (output_bits) {
                         if (fsk_ldpc == 0)
+                            /* vanilla uncoded */
                             fwrite(bitbuf, 1, fsk->Nbits, (FILE*)ctx);  /* one bit per byte */
-                        else
-                            fwrite(bytes_out, 1, nbytes, (FILE*)ctx);   /* packed bytes     */
+                        else {
+                            /* LDPC_FEC */
+                            uint8_t rx_status = freedv_get_rx_status(freedv);
+                            if (periodic_output) {
+                                /* in this mode we output status (and data if available) regularly, which is useful
+                                   for driving state machines */
+                                fwrite(&rx_status, 1, 1, (FILE*)ctx);
+                                assert(bytes == data_bytes_per_frame);
+                                /* write a dummy frame if no bytes available */
+                                if (rx_status | FREEDV_RX_BITS)
+                                    fwrite(bytes_out, 1, nbytes, (FILE*)ctx);
+                                else
+                                    fwrite(zeros_out, 1, data_bytes_per_frame, (FILE*)ctx);
+                                   
+                            }
+                            else /* in this mode we only output bytes when available */
+                                fwrite(bytes_out, 1, nbytes, (FILE*)ctx);   /* packed bytes     */
+                        }
                     }
                     
                     if((FILE*)ctx == stdout) fflush((FILE*)ctx);
@@ -436,7 +454,7 @@ int main(int argc, char **argv)
                 {0, 0, 0, 0}
             };
         
-            opt = getopt_long(argc,argv,"a:d:e:f:g:s:b:n:p:S:u:r:m:c:M:R:xt:w:jk:v",long_opts,&opt_idx);
+            opt = getopt_long(argc,argv,"a:d:e:f:g:s:b:n:p:S:u:r:m:c:M:R:xt:w:jk:vq",long_opts,&opt_idx);
             if (opt != -1) {
                 switch (opt) {
 		case 'a':
@@ -481,6 +499,9 @@ int main(int argc, char **argv)
 			break;
 		case 'p':
 			ppm_error = atoi(optarg);
+			break;
+		case 'q':
+                        periodic_output = 1;
 			break;
 		case 'b':
 			out_block_size = (uint32_t)atof(optarg);
@@ -681,16 +702,18 @@ int main(int argc, char **argv)
        } else {
             /* coded mode: use FreeDV API to set up and run FSK modem, LDPC, framer */
 
-            int data_bits_per_frame, bits_per_frame;
+            int data_bits_per_frame;
             adv.Rs = Rs; adv.Fs = modem_samp_rate; adv.M = M; adv.tone_spacing = tone_spacing;
             freedv = freedv_open_advanced(FREEDV_MODE_FSK_LDPC, &adv);
             assert(freedv != NULL);
             data_bits_per_frame = freedv_get_bits_per_modem_frame(freedv);
-            bits_per_frame = freedv_tx_fsk_ldpc_bits_per_frame(freedv);
             assert(data_bits_ber_frame % 8); /* only want codes that send complete bytes */
             fprintf(stderr, "FSK LDPC mode code: %s data_bits_per_frame: %d\n", adv.codename, data_bits_per_frame);
             fsk = freedv_get_fsk(freedv);
-            bytes_out = malloc(data_bits_per_frame / 8);
+            data_bytes_per_frame = data_bits_per_frame / 8;
+            bytes_out = malloc(data_bytes_per_frame); assert(bytes_out != NULL);
+            zeros_out = malloc(data_bytes_per_frame); assert(zeros_out != NULL);
+            memset(zeros_out, 0, data_bytes_per_frame);
             freedv_set_verbose(freedv, verbose);
             freedv_set_test_frames(freedv, use_testframes);
         }
