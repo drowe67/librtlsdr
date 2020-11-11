@@ -32,6 +32,7 @@
 #include <netinet/in.h>
 #include <netdb.h> 
 #include <getopt.h>
+#include <fcntl.h>
 
 
 #ifndef _WIN32
@@ -39,7 +40,6 @@
 #else
 #include <windows.h>
 #include <io.h>
-#include <fcntl.h>
 #include "getopt/getopt.h"
 #endif
 
@@ -110,6 +110,8 @@ static uint8_t *zeros_out;
 static int verbose = 0;
 static int data_bytes_per_frame;
 static int periodic_output = 0;
+static int rtl_fsk_fifo;
+static int squelch = 0;
 
 void usage(void)
 {
@@ -310,6 +312,18 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
         int            prev_fsk_nin;
         int            nbytes = 0;
         uint8_t        rx_status = 0;
+        char           fifobuf[256];
+        int            ret;
+        
+        // look for messages from control fifo
+        ret = read(rtl_fsk_fifo, fifobuf, sizeof(fifobuf));
+        if (ret > 0) {
+            fprintf(stderr, "rtl_fsk: Read %d bytes from rpitx_fsk: %s\n", ret, fifobuf);
+            if (strcmp(fifobuf, "squelch on") == 0) squelch = 1;
+            if (strcmp(fifobuf, "squelch off") == 0) squelch = 0;
+        }
+        
+        if (squelch) return;
         
 	if (ctx) {
 		if (do_exit)
@@ -455,10 +469,11 @@ int main(int argc, char **argv)
                 {"testframes",no_argument,       0, 'i'},
                 {"vv",        no_argument,       0, 'l'},
                 {"mask",      required_argument, 0, 't'},
+                {"fifo",      required_argument, 0, 'j'},
                 {0, 0, 0, 0}
             };
         
-            opt = getopt_long(argc,argv,"a:d:e:f:g:s:b:n:p:S:u:r:m:c:M:R:xt:w:jk:vq",long_opts,&opt_idx);
+            opt = getopt_long(argc,argv,"a:d:e:f:g:o:s:b:n:p:S:u:r:m:c:M:R:xt:w:jk:vq",long_opts,&opt_idx);
             if (opt != -1) {
                 switch (opt) {
 		case 'a':
@@ -495,6 +510,15 @@ int main(int argc, char **argv)
 		case 'g':
 			gain = (int)(atof(optarg) * 10); /* tenths of a dB */
 			break;
+                case 'o':
+                        fprintf(stderr, "rtl_fsk: opening FIFO\n");
+                        rtl_fsk_fifo = open(optarg, O_RDONLY | O_NONBLOCK);
+                        if (rtl_fsk_fifo == -1) {
+                            fprintf(stderr, "Error opening fifo %s\n", optarg);
+                            exit(1);
+                        }
+                        fprintf(stderr, "rtl_fsk: FIFO opened OK ...\n");
+                        break;
 		case 's':
 			samp_rate = (uint32_t)atofs(optarg);
 			break;
