@@ -258,7 +258,7 @@ void update_dashboard(struct FSK *fsk) {
             SfdB[i] = 20.0*log10(sum+1E-6);
         }
                                     
-        snprintf(buf1, BUF_SZ, "{"); strncat(buf, buf1, BUF_SZ);
+        snprintf(buf1, BUF_SZ, "{"); strncat(buf, buf1, BUF_SZ-1);
         snprintf(buf1, BUF_SZ, "\"SfdB\":["); strncat(buf, buf1, BUF_SZ);
         for(i=0; i<Ndft; i++) {
             snprintf(buf1, BUF_SZ, "%f",SfdB[i]); strncat(buf, buf1, BUF_SZ);
@@ -309,6 +309,7 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
         COMP          *pmodembuf;
         int            prev_fsk_nin;
         int            nbytes = 0;
+        uint8_t        rx_status = 0;
         
 	if (ctx) {
 		if (do_exit)
@@ -366,8 +367,11 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
                     else {
                         if (fsk_ldpc == 0)
                             fsk_demod(fsk, bitbuf, pmodembuf);
-                        else
+                        else {
                             nbytes = freedv_rawdatacomprx(freedv, bytes_out, pmodembuf);
+                            rx_status = freedv_get_rx_status(freedv);
+                        }
+
                     }
                     pmodembuf += prev_fsk_nin;
                     nmodembuf -= prev_fsk_nin;
@@ -380,15 +384,15 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
                             fwrite(bitbuf, 1, fsk->Nbits, (FILE*)ctx);  /* one bit per byte */
                         else {
                             /* LDPC_FEC */
-                            uint8_t rx_status = freedv_get_rx_status(freedv);
                             if (periodic_output) {
                                 /* in this mode we output status (and data if available) regularly, which is useful
                                    for driving state machines */
                                 fwrite(&rx_status, 1, 1, (FILE*)ctx);
-                                assert(bytes == data_bytes_per_frame);
                                 /* write a dummy frame if no bytes available */
-                                if (rx_status | FREEDV_RX_BITS)
+                                if (rx_status & FREEDV_RX_BITS) {
                                     fwrite(bytes_out, 1, nbytes, (FILE*)ctx);
+                                    // fprintf(stderr, "rx_status: 0x%02x %d nbytes: %d data_bytes_per_frame: %d\n", rx_status, rx_status | FREEDV_RX_BITS, nbytes, data_bytes_per_frame);
+                               }
                                 else
                                     fwrite(zeros_out, 1, data_bytes_per_frame, (FILE*)ctx);
                                    
