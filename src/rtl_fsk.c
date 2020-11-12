@@ -110,6 +110,7 @@ static uint8_t *zeros_out;
 static int verbose = 0;
 static int data_bytes_per_frame;
 static int periodic_output = 0;
+static uint8_t filter = 0;
 
 void usage(void)
 {
@@ -132,9 +133,10 @@ void usage(void)
 		"\t[-u hostname (optional hostname:8001 where we send UDP dashboard diagnostics)\n"
                 "\t[-x output complex float samples (default output demodulated bits)]\n"
                 "\t[-t toneSpacingHz use 'mask' freq est]\n"
-                "\t[--code CodeName  Use LDPC code CodeName] (note packed bytes out)\n"
-                "\t[--listcodes      List available LDPC codes]\n"
-                "\t[--testframes]    built in testframe mode\n"
+                "\t[--code CodeName    Use LDPC code CodeName] (note packed bytes out)\n"
+                "\t[--listcodes        List available LDPC codes]\n"
+                "\t[--testframes]      Built in testframe mode\n"
+                "\t[--filter Byte      Filter (don't output) FSK_LDPC frames starting with (non-zero) Byte\n"
 		"\tfilename ( '-' dumps bits to stdout)\n\n", DEFAULT_MODEM_SAMPLE_RATE, DEFAULT_SAMPLE_RATE, DEFAULT_SYMBOL_RATE, DEFAULT_M);
 	exit(1);
 }
@@ -370,6 +372,12 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
                         else {
                             nbytes = freedv_rawdatacomprx(freedv, bytes_out, pmodembuf);
                             rx_status = freedv_get_rx_status(freedv);
+                            /* optional filtering of packets */
+                            if ((rx_status & FREEDV_RX_BITS) && filter) {
+                                //fprintf(stderr,"bytes_out[0]: 0x%02x filter: 0x%02x\n", bytes_out[0], filter);
+                                if (bytes_out[0] == filter)
+                                    rx_status &= ~FREEDV_RX_BITS;
+                            }                                
                         }
 
                     }
@@ -391,14 +399,14 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
                                 /* write a dummy frame if no bytes available */
                                 if (rx_status & FREEDV_RX_BITS) {
                                     fwrite(bytes_out, 1, nbytes, (FILE*)ctx);
-                                    // fprintf(stderr, "rx_status: 0x%02x %d nbytes: %d data_bytes_per_frame: %d\n", rx_status, rx_status | FREEDV_RX_BITS, nbytes, data_bytes_per_frame);
-                               }
+                                }
                                 else
                                     fwrite(zeros_out, 1, data_bytes_per_frame, (FILE*)ctx);
                                    
                             }
                             else /* in this mode we only output bytes when available */
-                                fwrite(bytes_out, 1, nbytes, (FILE*)ctx);   /* packed bytes     */
+                                if (rx_status & FREEDV_RX_BITS)
+                                    fwrite(bytes_out, 1, nbytes, (FILE*)ctx);   /* packed bytes     */
                         }
                     }
                     
@@ -455,6 +463,7 @@ int main(int argc, char **argv)
                 {"testframes",no_argument,       0, 'i'},
                 {"vv",        no_argument,       0, 'l'},
                 {"mask",      required_argument, 0, 't'},
+                {"filter",    required_argument, 0, 'o'},
                 {0, 0, 0, 0}
             };
         
@@ -512,6 +521,9 @@ int main(int argc, char **argv)
 			break;
 		case 'n':
 			bytes_to_read = (uint32_t)atof(optarg) * 2;
+			break;
+		case 'o':
+			filter = strtol(optarg, NULL, 0);
 			break;
 		case 'R':
 		case 'r':
