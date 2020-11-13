@@ -111,6 +111,7 @@ static int verbose = 0;
 static int data_bytes_per_frame;
 static int periodic_output = 0;
 static uint8_t filter = 0;
+static int inject_snr = 0;
 
 void usage(void)
 {
@@ -124,7 +125,6 @@ void usage(void)
 		"\t[-g gain (default: 0 for auto)]\n"
 		"\t[-p ppm_error (default: 0)]\n"
 		"\t[-M modn order (default: 2)]\n"
-		"\t[-b output_block_size (default: 16 * 16384)]\n"
 		"\t[-n number of samples to read (default: 0, infinite)]\n"
 		"\t[-q periodic | status byte | data bytes | output (default: off)]\n"
 		"\t[-S force sync output (default: async)]\n"
@@ -137,6 +137,7 @@ void usage(void)
                 "\t[--listcodes        List available LDPC codes]\n"
                 "\t[--testframes]      Built in testframe mode\n"
                 "\t[--filter Byte      Filter (don't output) FSK_LDPC frames starting with (non-zero) Byte\n"
+                "\t[--injectsnr        inject S and N floats into packet output\n" 
 		"\tfilename ( '-' dumps bits to stdout)\n\n", DEFAULT_MODEM_SAMPLE_RATE, DEFAULT_SAMPLE_RATE, DEFAULT_SYMBOL_RATE, DEFAULT_M);
 	exit(1);
 }
@@ -378,10 +379,12 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
                                 if (bytes_out[0] == filter)
                                     rx_status &= ~FREEDV_RX_BITS;
                             }
-                            if (rx_status & FREEDV_RX_BITS) {
+                            if (inject_snr && (rx_status & FREEDV_RX_BITS)) {
                                 float S,N;
                                 freedv_get_fsk_S_and_N(freedv, &S, &N);
-                                fprintf(stderr, "S: %f N: %f snr: %f\n", S, N, 10*log10(S/N));
+                                //fprintf(stderr, "S: %f N: %f snr: %f\n", S, N, 10*log10(S/N));
+                                memcpy(&bytes_out[2], (uint8_t*)&S, sizeof(float));
+                                memcpy(&bytes_out[6], (uint8_t*)&N, sizeof(float));
                             }
                         }
 
@@ -470,10 +473,11 @@ int main(int argc, char **argv)
                 {"vv",        no_argument,       0, 'l'},
                 {"mask",      required_argument, 0, 't'},
                 {"filter",    required_argument, 0, 'o'},
+                {"injectsnr", no_argument,       0, 'n'},
                 {0, 0, 0, 0}
             };
         
-            opt = getopt_long(argc,argv,"a:d:e:f:g:s:b:n:p:S:u:r:m:c:M:R:xt:w:jk:vq",long_opts,&opt_idx);
+            opt = getopt_long(argc,argv,"a:d:e:f:g:s:bn:p:S:u:r:m:c:M:R:xt:w:jk:vq",long_opts,&opt_idx);
             if (opt != -1) {
                 switch (opt) {
 		case 'a':
@@ -523,7 +527,7 @@ int main(int argc, char **argv)
                         periodic_output = 1;
 			break;
 		case 'b':
-			out_block_size = (uint32_t)atof(optarg);
+                        inject_snr = 1;
 			break;
 		case 'n':
 			bytes_to_read = (uint32_t)atof(optarg) * 2;
