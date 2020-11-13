@@ -377,7 +377,12 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
                                 //fprintf(stderr,"bytes_out[0]: 0x%02x filter: 0x%02x\n", bytes_out[0], filter);
                                 if (bytes_out[0] == filter)
                                     rx_status &= ~FREEDV_RX_BITS;
-                            }                                
+                            }
+                            if (rx_status & FREEDV_RX_BITS) {
+                                float S,N;
+                                freedv_get_fsk_S_and_N(freedv, &S, &N);
+                                fprintf(stderr, "S: %f N: %f snr: %f\n", S, N, 10*log10(S/N));
+                            }
                         }
 
                     }
@@ -407,6 +412,7 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
                             else /* in this mode we only output bytes when available */
                                 if (rx_status & FREEDV_RX_BITS)
                                     fwrite(bytes_out, 1, nbytes, (FILE*)ctx);   /* packed bytes     */
+                               
                         }
                     }
                     
