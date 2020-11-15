@@ -112,6 +112,7 @@ static int data_bytes_per_frame;
 static int periodic_output = 0;
 static uint8_t filter = 0;
 static int inject_snr = 0;
+static int log_snr = 0;
 
 void usage(void)
 {
@@ -127,7 +128,6 @@ void usage(void)
 		"\t[-M modn order (default: 2)]\n"
 		"\t[-n number of samples to read (default: 0, infinite)]\n"
 		"\t[-q periodic | status byte | data bytes | output (default: off)]\n"
-		"\t[-S force sync output (default: async)]\n"
 		"\t[-r FSK modem symbol rate (default: %d Hz)]\n"
 		"\t[-m number of FSK modem tones (default: %d)]\n"
 		"\t[-u hostname (optional hostname:8001 where we send UDP dashboard diagnostics)\n"
@@ -137,7 +137,8 @@ void usage(void)
                 "\t[--listcodes        List available LDPC codes]\n"
                 "\t[--testframes]      Built in testframe mode\n"
                 "\t[--filter Byte      Filter (don't output) FSK_LDPC frames starting with (non-zero) Byte\n"
-                "\t[--injectsnr        inject S and N floats into packet output\n" 
+                "\t[--injectsnr        inject S and N floats into packet output\n"
+                "\t[--logsnr           SNR info on stderr when packet received\n"
 		"\tfilename ( '-' dumps bits to stdout)\n\n", DEFAULT_MODEM_SAMPLE_RATE, DEFAULT_SAMPLE_RATE, DEFAULT_SYMBOL_RATE, DEFAULT_M);
 	exit(1);
 }
@@ -379,6 +380,7 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
                                 if (bytes_out[0] == filter)
                                     rx_status &= ~FREEDV_RX_BITS;
                             }
+                            /* optional received SNR info in packet bytes for retransmission */
                             if (inject_snr && (rx_status & FREEDV_RX_BITS)) {
                                 float S,N;
                                 freedv_get_fsk_S_and_N(freedv, &S, &N);
@@ -386,8 +388,18 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
                                 memcpy(&bytes_out[2], (uint8_t*)&S, sizeof(float));
                                 memcpy(&bytes_out[6], (uint8_t*)&N, sizeof(float));
                             }
+                            /* optional SNR info to stderr for logging */
+                            if (log_snr && (rx_status & FREEDV_RX_BITS)) {
+                                float S,N;
+                                freedv_get_fsk_S_and_N(freedv, &S, &N);
+                                fprintf(stderr, "%lu ", (unsigned long)time(NULL));
+                                fprintf(stderr, "Sloc: %f Nloc: %f snrloc: %f ", S, N, 10*log10(S/N));
+                                memcpy(&S, &bytes_out[2], sizeof(float));                                
+                                memcpy(&N, &bytes_out[6], sizeof(float));
+                                fprintf(stderr, "Srem: %f Nrem: %f snrrem: %f\n", S, N, 10*log10(S/N));
+                            }
                         }
-
+                            
                     }
                     pmodembuf += prev_fsk_nin;
                     nmodembuf -= prev_fsk_nin;
@@ -474,10 +486,11 @@ int main(int argc, char **argv)
                 {"mask",      required_argument, 0, 't'},
                 {"filter",    required_argument, 0, 'o'},
                 {"injectsnr", no_argument,       0, 'n'},
+                {"logsnr",    no_argument,       0, 'L'},
                 {0, 0, 0, 0}
             };
         
-            opt = getopt_long(argc,argv,"a:d:e:f:g:s:bn:p:S:u:r:m:c:M:R:xt:w:jk:vq",long_opts,&opt_idx);
+            opt = getopt_long(argc,argv,"a:d:e:f:g:S:bn:p:s:u:r:Lm:c:M:R:xt:w:jk:vq",long_opts,&opt_idx);
             if (opt != -1) {
                 switch (opt) {
 		case 'a':
@@ -567,6 +580,9 @@ int main(int argc, char **argv)
                         break;
                 case 'l':
                         verbose = 2;
+                        break;
+                case 'L':
+                        log_snr = 1;
                         break;
                 default:
                         usage();
