@@ -393,10 +393,14 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
                                 float S,N;
                                 freedv_get_fsk_S_and_N(freedv, &S, &N);
                                 fprintf(stderr, "%lu ", (unsigned long)time(NULL));
-                                fprintf(stderr, "Sloc: %f Nloc: %f snrloc: %f ", S, N, 10*log10(S/N));
+                                fprintf(stderr, "Sloc: %8.4f Nloc: %8.4f snrloc: %2.2f ", S, N, 10*log10(S/N));
                                 memcpy(&S, &bytes_out[2], sizeof(float));                                
                                 memcpy(&N, &bytes_out[6], sizeof(float));
-                                fprintf(stderr, "Srem: %f Nrem: %f snrrem: %f\n", S, N, 10*log10(S/N));
+                                if ((S>0) && (N>0)) 
+                                    fprintf(stderr, "Srem: %8.4f Nrem: %8.4f snrrem: %2.2f\n", S, N, 10*log10(S/N));
+                                else
+                                    fprintf(stderr, "Srem: %8.4f Nrem: %8.4f snrrem: %2.2f\n", 0., 0., 0.);
+                                   
                             }
                         }
                             
