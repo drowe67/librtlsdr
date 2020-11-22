@@ -113,6 +113,8 @@ static int periodic_output = 0;
 static uint8_t filter = 0;
 static int inject_snr = 0;
 static int log_snr = 0;
+static float RxGain = 0.0;
+static int Rs = DEFAULT_SYMBOL_RATE;
 
 void usage(void)
 {
@@ -390,16 +392,21 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
                             }
                             /* optional SNR info to stderr for logging */
                             if (log_snr && (rx_status & FREEDV_RX_BITS)) {
-                                float S,N;
+                                float S,N,RxleveldBm, NodBmHz;
                                 freedv_get_fsk_S_and_N(freedv, &S, &N);
+                                RxleveldBm = 10*log10(S) + RxGain;
+                                NodBmHz = 10*log10(N) + RxGain - 10*log10((float)Rs);;
                                 fprintf(stderr, "%lu ", (unsigned long)time(NULL));
-                                fprintf(stderr, "Rx Frame Sloc: %8.4f Nloc: %8.4f snrloc: %2.2f ", S, N, 10*log10(S/N));
+                                fprintf(stderr, "Rx Frame Rxloc: %6.2f Noloc: %6.2f snrloc: %5.2f ", RxleveldBm, NodBmHz, 10*log10(S/N));
                                 memcpy(&S, &bytes_out[2], sizeof(float));                                
                                 memcpy(&N, &bytes_out[6], sizeof(float));
-                                if ((S>0) && (N>0)) 
-                                    fprintf(stderr, "Srem: %8.4f Nrem: %8.4f snrrem: %2.2f\n", S, N, 10*log10(S/N));
+                                if ((S>0) && (N>0)) {
+                                    RxleveldBm = 10*log10(S) + RxGain;
+                                    NodBmHz = 10*log10(N) + RxGain - 10*log10((float)Rs);;
+                                    fprintf(stderr, "Rxrem: %6.2f Norem: %6.2f snrrem: %5.2f\n", RxleveldBm, NodBmHz, 10*log10(S/N));
+                                }
                                 else
-                                    fprintf(stderr, "Srem: %8.4f Nrem: %8.4f snrrem: %2.2f\n", 0., 0., 0.);
+                                    fprintf(stderr, "Srem: %6.2f Nrem: %6.2f snrrem: %5.2f\n", 0., 0., 0.);
                                    
                             }
                         }
@@ -466,7 +473,6 @@ int main(int argc, char **argv)
 	int dev_given = 0;
         char hostname[256];
 	uint32_t frequency = 100000000;
-        int Rs = DEFAULT_SYMBOL_RATE;
         int M = DEFAULT_M;
         int channel_width = DEFAULT_CHANNEL_WIDTH;
 	uint32_t bandwidth = DEFAULT_BANDWIDTH;
@@ -530,6 +536,19 @@ int main(int argc, char **argv)
 			break;
 		case 'g':
 			gain = (int)(atof(optarg) * 10); /* tenths of a dB */
+                        /* note YMMV - these will vary across RTLSDR brands and samples */
+                        if (gain/10 == 49)
+                            RxGain = -90.7;
+                        else if (gain/10 == 45)
+                            RxGain = -85.6;
+                        else if (gain/10 == 40)
+                            RxGain = -81.1;
+                        else if (gain/10 == 35)
+                            RxGain = -76.9;
+                        else if (gain/10 == 30)
+                            RxGain = -71.0;
+                        else      
+                            fprintf(stderr,"rtl_fsk: WARNING RxLevel not calibrated at this -g gain\n");
 			break;
 		case 's':
 			samp_rate = (uint32_t)atofs(optarg);
